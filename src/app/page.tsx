@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { type InferenceResult, getModels, getResults, runInference } from "@/lib/api";
+import { DataTable, type TableColumn } from "@/components/ui/data-table";
 
 const NiiViewer = dynamic(
   () => import("@/components/nii-viewer").then((m) => ({ default: m.NiiViewer })),
@@ -140,7 +141,7 @@ function deltaColor(delta: number) {
 
 /* ─── page ────────────────────────────────────────────────── */
 export default function Page() {
-  const defaultApi = process.env.NEXT_PUBLIC_API_BASE ?? "/hf-api";
+  const defaultApi = process.env.NEXT_PUBLIC_API_BASE ?? "https://sezer-muhammed-mri-inference-api.hf.space";
   const [apiBase, setApiBase] = useState(defaultApi);
   const [apiBaseInput, setApiBaseInput] = useState(defaultApi);
   const [showSettings, setShowSettings] = useState(false);
@@ -537,77 +538,86 @@ export default function Page() {
               <p className="text-[13px] text-[var(--ds-gray-700)]">No results yet</p>
               <p className="font-mono text-[11px] text-[var(--ds-gray-600)]">Run your first inference above</p>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-[13px]">
-                <thead>
-                  <tr className="border-b border-[var(--ds-gray-alpha-300)] bg-[var(--ds-gray-100)]">
-                    {["ID", "File", "Model", "Centiloid", "Raw output", "Δ vs label", "Label", "Date"].map((h) => (
-                      <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--ds-gray-alpha-200)]">
-                  {resultsLoading && results.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-6 text-center font-mono text-[12px] text-[var(--ds-gray-600)]">
-                        Loading…
-                      </td>
-                    </tr>
+          ) : (() => {
+            type ResultRow = Omit<InferenceResult, "id"> & { id: string };
+            const rows: ResultRow[] = results.map((r) => ({ ...r, id: String(r.id) }));
+            const columns: TableColumn<ResultRow>[] = [
+              {
+                key: "id",
+                header: "ID",
+                render: (r) => <span className="font-mono text-[11px] text-[var(--ds-gray-700)]">#{r.id}</span>,
+              },
+              {
+                key: "filename",
+                header: "File",
+                render: (r) => (
+                  <span className="block max-w-[160px] truncate font-medium" title={r.filename}>
+                    {r.filename}
+                  </span>
+                ),
+              },
+              {
+                key: "model_name",
+                header: "Model",
+                render: (r) => (
+                  <span className="inline-flex h-6 items-center rounded-[5px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-2 font-mono text-[11px]">
+                    {r.model_name}
+                  </span>
+                ),
+              },
+              {
+                key: "centiloid",
+                header: "Centiloid",
+                render: (r) => <CentiloidCell value={r.centiloid} />,
+              },
+              {
+                key: "raw_output",
+                header: "Raw output",
+                align: "right",
+                render: (r) => (
+                  <span className="font-mono text-[11px] text-[var(--ds-gray-700)]">
+                    {r.raw_output.toFixed(4)}
+                  </span>
+                ),
+              },
+              {
+                key: "delta",
+                header: "Δ vs label",
+                align: "right",
+                render: (r) => {
+                  const labelNum = r.label ? parseFloat(r.label) : null;
+                  const delta = labelNum !== null ? Math.abs(r.centiloid - labelNum) : null;
+                  return delta !== null ? (
+                    <span className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: deltaColor(delta) }}>
+                      ±{delta.toFixed(1)}
+                    </span>
                   ) : (
-                    results.map((row) => {
-                      const labelNum = row.label ? parseFloat(row.label) : null;
-                      const delta = labelNum !== null ? Math.abs(row.centiloid - labelNum) : null;
-                      return (
-                        <tr key={row.id} className="transition hover:bg-[var(--ds-gray-100)]">
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-[11px] text-[var(--ds-gray-700)]">#{row.id}</span>
-                          </td>
-                          <td className="max-w-[160px] px-4 py-3">
-                            <span className="block truncate font-medium" title={row.filename}>
-                              {row.filename}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex h-6 items-center rounded-[5px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-2 font-mono text-[11px]">
-                              {row.model_name}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <CentiloidCell value={row.centiloid} />
-                          </td>
-                          <td className="px-4 py-3 font-mono text-[11px] text-[var(--ds-gray-700)]">
-                            {row.raw_output.toFixed(4)}
-                          </td>
-                          <td className="px-4 py-3">
-                            {delta !== null ? (
-                              <span className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: deltaColor(delta) }}>
-                                ±{delta.toFixed(1)}
-                              </span>
-                            ) : (
-                              <span className="text-[var(--ds-gray-500)]">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-[var(--ds-gray-800)]">
-                            {row.label ? (
-                              <span className="font-mono text-[12px]">{row.label} CL</span>
-                            ) : (
-                              <span className="text-[var(--ds-gray-500)]">—</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-[var(--ds-gray-700)]">
-                            {fmtDate(row.created_at)}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    <span className="text-[var(--ds-gray-500)]">—</span>
+                  );
+                },
+              },
+              {
+                key: "label",
+                header: "Label",
+                render: (r) =>
+                  r.label ? (
+                    <span className="font-mono text-[12px]">{r.label} CL</span>
+                  ) : (
+                    <span className="text-[var(--ds-gray-500)]">—</span>
+                  ),
+              },
+              {
+                key: "created_at",
+                header: "Date",
+                render: (r) => (
+                  <span className="whitespace-nowrap font-mono text-[11px] text-[var(--ds-gray-700)]">
+                    {fmtDate(r.created_at)}
+                  </span>
+                ),
+              },
+            ];
+            return <DataTable rows={rows} columns={columns} />;
+          })()}
         </div>
       </main>
     </div>
