@@ -522,7 +522,7 @@ export default function DataAnalysisPage() {
       const fromResults = [...new Set(res.map(r => r.model_name))];
       setModels([...new Set([...mods, ...fromResults])].sort());
       const folds = await getFolds(apiBase).catch(() => (
-        [...new Set(res.map(r => r.fold).filter((f): f is number => f !== null))]
+        [...new Set(res.map(r => r.fold).filter((f): f is number => typeof f === "number"))]
       ));
       setAvailableFolds(folds.sort((a, b) => a - b));
     } catch (e: unknown) {
