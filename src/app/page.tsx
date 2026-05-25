@@ -1,8 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   AlertCircle,
+  BarChart2,
   Brain,
   CheckCircle2,
   ChevronDown,
@@ -40,6 +42,11 @@ type RunState =
   | { status: "running" }
   | { status: "done"; result: InferenceResult }
   | { status: "error"; message: string };
+
+/* ─── clip ─────────────────────────────────────────────────── */
+const CL_MIN = -20;
+const CL_MAX = 130;
+const clip = (v: number) => Math.max(CL_MIN, Math.min(CL_MAX, v));
 
 /* ─── centiloid helpers ───────────────────────────────────── */
 const CENTILOID_THRESHOLDS = [
@@ -137,6 +144,13 @@ function deltaColor(delta: number) {
   if (delta < 10) return "var(--ds-green-700)";
   if (delta < 25) return "var(--ds-amber-700)";
   return "var(--ds-red-700)";
+}
+
+function clippedDelta(centiloid: number, labelStr: string | null): number | null {
+  if (!labelStr) return null;
+  const lv = parseFloat(labelStr);
+  if (isNaN(lv)) return null;
+  return Math.abs(clip(centiloid) - clip(lv));
 }
 
 /* ─── page ────────────────────────────────────────────────── */
@@ -262,6 +276,13 @@ export default function Page() {
             />
             <span className="font-mono text-[12px] text-[var(--ds-gray-700)]">{apiBase}</span>
           </div>
+          <Link
+            href="/data-analysis"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)]"
+          >
+            <BarChart2 aria-hidden className="h-3.5 w-3.5" />
+            Data Analysis
+          </Link>
           <button
             onClick={() => { setApiBaseInput(apiBase); setShowSettings((v) => !v); }}
             className="inline-flex h-8 items-center gap-1.5 rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)]"
@@ -441,8 +462,7 @@ export default function Page() {
             {/* Last result */}
             {runState.status === "done" && (() => {
               const r = runState.result;
-              const labelNum = label ? parseFloat(label) : null;
-              const delta = labelNum !== null ? Math.abs(r.centiloid - labelNum) : null;
+              const delta = clippedDelta(r.centiloid, label || null);
               return (
                 <div className="rounded-[8px] border border-[var(--ds-green-400)] bg-[var(--ds-green-100)]">
                   <div className="flex items-center gap-2 border-b border-[var(--ds-green-400)] px-4 py-3">
@@ -585,8 +605,7 @@ export default function Page() {
                 header: "Δ vs label",
                 align: "right",
                 render: (r) => {
-                  const labelNum = r.label ? parseFloat(r.label) : null;
-                  const delta = labelNum !== null ? Math.abs(r.centiloid - labelNum) : null;
+                  const delta = clippedDelta(r.centiloid, r.label);
                   return delta !== null ? (
                     <span className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: deltaColor(delta) }}>
                       ±{delta.toFixed(1)}
