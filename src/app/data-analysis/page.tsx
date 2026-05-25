@@ -382,7 +382,7 @@ function ThresholdControls({
         <button
           className="inline-flex h-7 items-center rounded-[6px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
           disabled={sorted.length >= 3}
-          onClick={() => setThresholds([...sorted, sorted.at(-1) !== undefined ? Math.min(sorted.at(-1)! + 18, 120) : 18])}
+          onClick={() => setThresholds([...sorted, sorted.at(-1) !== undefined ? Math.min(sorted.at(-1)! + 18, CL_MAX) : 18])}
           type="button"
         >
           Add point
@@ -408,8 +408,8 @@ function ThresholdControls({
             </div>
             <input
               type="range"
-              min={0}
-              max={60}
+              min={CL_MIN}
+              max={CL_MAX}
               step={1}
               value={value}
               onChange={e => {
@@ -423,7 +423,7 @@ function ThresholdControls({
         ))}
       </div>
       <div className="mt-1 flex justify-between font-mono text-[10px] text-[var(--ds-gray-500)]">
-        <span>0</span><span>15</span><span>30</span><span>45</span><span>60</span>
+        <span>-20</span><span>0</span><span>50</span><span>100</span><span>130</span>
       </div>
     </div>
   );
