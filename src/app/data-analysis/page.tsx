@@ -259,16 +259,20 @@ function errorTone(error: number) {
 
 function scatterErrorColor(error: number) {
   const ratio = Math.max(0, Math.min(1, error / 70));
-  const hue = 145 - ratio * 145;
-  const lightness = 38 + ratio * 4;
-  return `hsl(${hue} 72% ${lightness}%)`;
+  return geistScaleColor(ratio);
 }
 
 function diagonalDistanceColor(distance: number, maxDistance: number) {
   const ratio = maxDistance > 0 ? Math.max(0, Math.min(1, distance / maxDistance)) : 0;
-  const hue = 145 - ratio * 145;
-  const lightness = 38 + ratio * 4;
-  return `hsl(${hue} 72% ${lightness}%)`;
+  return geistScaleColor(ratio);
+}
+
+function geistScaleColor(ratio: number) {
+  const t = Math.max(0, Math.min(1, ratio));
+  if (t <= 0.5) {
+    return `color-mix(in srgb, var(--ds-green-700) ${(1 - t * 2) * 100}%, var(--ds-amber-700))`;
+  }
+  return `color-mix(in srgb, var(--ds-amber-700) ${(1 - (t - 0.5) * 2) * 100}%, var(--ds-red-700))`;
 }
 
 function MetricDot({ color }: { color: string }) {
