@@ -264,6 +264,13 @@ function scatterErrorColor(error: number) {
   return `hsl(${hue} 72% ${lightness}%)`;
 }
 
+function diagonalDistanceColor(distance: number, maxDistance: number) {
+  const ratio = maxDistance > 0 ? Math.max(0, Math.min(1, distance / maxDistance)) : 0;
+  const hue = 145 - ratio * 145;
+  const lightness = 38 + ratio * 4;
+  return `hsl(${hue} 72% ${lightness}%)`;
+}
+
 function MetricDot({ color }: { color: string }) {
   return (
     <span
@@ -351,13 +358,18 @@ function ConfusionMatrix({ confusion, thresholds }: {
         <div key={actualIndex} className="grid items-center gap-2" style={{ gridTemplateColumns: `88px repeat(${size}, minmax(74px, 1fr))` }}>
           <div className="pr-2 text-right font-mono text-[10px] uppercase text-[var(--ds-gray-600)]">Actual C{actualIndex + 1}</div>
           {row.map((val, predIndex) => {
-            const ok = actualIndex === predIndex;
+            const distance = Math.abs(actualIndex - predIndex);
+            const cellColor = diagonalDistanceColor(distance, size - 1);
+            const lightRatio = size > 1 ? Math.max(0, Math.min(1, distance / (size - 1))) : 0;
             return (
               <div key={predIndex} className="rounded-[6px] border p-3 text-center"
-                style={{ background: ok ? "var(--ds-green-100)" : "var(--ds-red-100)", borderColor: ok ? "var(--ds-green-400)" : "var(--ds-red-400)" }}>
-                <p className="mb-1 font-mono text-[10px] uppercase" style={{ color: ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{ok ? "OK" : "MISS"}</p>
-                <p className="text-[22px] font-semibold tabular-nums leading-none" style={{ color: ok ? "var(--ds-green-900)" : "var(--ds-red-900)" }}>{val.toLocaleString()}</p>
-                <p className="mt-1 font-mono text-[10px]" style={{ color: ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{pct(val)}</p>
+                style={{
+                  background: `color-mix(in srgb, ${cellColor} ${18 + lightRatio * 22}%, var(--ds-background-100))`,
+                  borderColor: cellColor,
+                }}>
+                <p className="mb-1 font-mono text-[10px] uppercase text-[var(--ds-gray-900)]">{distance === 0 ? "OK" : `D${distance}`}</p>
+                <p className="text-[22px] font-semibold tabular-nums leading-none text-[var(--ds-gray-1000)]">{val.toLocaleString()}</p>
+                <p className="mt-1 font-mono text-[10px] text-[var(--ds-gray-800)]">{pct(val)}</p>
               </div>
             );
           })}
@@ -474,6 +486,7 @@ export default function DataAnalysisPage() {
   const [selectedFold, setSelectedFold] = useState<number | "__all__">("__all__");
   const [thresholds, setThresholds] = useState<number[]>(DEFAULT_THRESHOLDS);
   const [binCount, setBinCount] = useState(DEFAULT_BINS);
+  const [tablePage, setTablePage] = useState(0);
 
   // ── fusion state
   const [fusionModels, setFusionModels] = useState<string[]>([]);
@@ -520,6 +533,7 @@ export default function DataAnalysisPage() {
   }, [apiBase]);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { setTablePage(0); }, [selectedModel, selectedFold, fusionModels, fusionWeights]);
 
   const foldResults = useMemo(
     () => selectedFold === "__all__" ? results : results.filter(r => r.fold === selectedFold),
@@ -661,6 +675,13 @@ export default function DataAnalysisPage() {
   const totalFiltered = selectedModel === "__fused__" ? fusedData.length
     : selectedModel === "__all__" ? foldResults.length
     : foldResults.filter(r => r.model_name === selectedModel).length;
+
+  const tableRowsAll = selectedModel === "__fused__" ? fusedRows : individualRows;
+  const tableLimit = 20;
+  const tablePageCount = Math.max(1, Math.ceil(tableRowsAll.length / tableLimit));
+  const safeTablePage = Math.min(tablePage, tablePageCount - 1);
+  const tableStart = safeTablePage * tableLimit;
+  const tableRowsPage = tableRowsAll.slice(tableStart, tableStart + tableLimit);
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* render                                                                   */
@@ -1109,12 +1130,32 @@ export default function DataAnalysisPage() {
           <SectionCard eyebrow="09 / Results" title={selectedModel === "__fused__" ? "Fused model predictions" : "All inference records"}
             action={
               <span className="inline-flex h-6 items-center rounded-[5px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-2 font-mono text-[11px] text-[var(--ds-gray-800)]">
-                {(selectedModel === "__fused__" ? fusedRows.length : individualRows.length).toLocaleString()} records
+                {tableRowsAll.length
+                  ? `${tableStart + 1}-${Math.min(tableStart + tableRowsPage.length, tableRowsAll.length)} / ${tableRowsAll.length.toLocaleString()} records`
+                  : "0 records"}
               </span>
             }>
             {selectedModel === "__fused__"
-              ? <DataTable rows={fusedRows} columns={fusedColumns} />
-              : <DataTable rows={individualRows} columns={individualColumns} />}
+              ? <DataTable rows={tableRowsPage as typeof fusedRows} columns={fusedColumns} />
+              : <DataTable rows={tableRowsPage as typeof individualRows} columns={individualColumns} />}
+            {tableRowsAll.length > tableLimit && (
+              <div className="flex items-center justify-end gap-2 border-t border-[var(--ds-gray-alpha-300)] p-3">
+                <button
+                  onClick={() => setTablePage(Math.max(0, safeTablePage - 1))}
+                  disabled={safeTablePage === 0}
+                  className="inline-flex h-8 items-center rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() => setTablePage(Math.min(tablePageCount - 1, safeTablePage + 1))}
+                  disabled={safeTablePage >= tablePageCount - 1}
+                  className="inline-flex h-8 items-center rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </SectionCard>
         )}
       </main>

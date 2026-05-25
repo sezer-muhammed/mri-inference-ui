@@ -175,7 +175,7 @@ export default function Page() {
   const [results, setResults] = useState<InferenceResult[]>([]);
   const [resultsTotal, setResultsTotal] = useState(0);
   const [resultsOffset, setResultsOffset] = useState(0);
-  const resultsLimit = 100;
+  const resultsLimit = 20;
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultsError, setResultsError] = useState<string | null>(null);
 
