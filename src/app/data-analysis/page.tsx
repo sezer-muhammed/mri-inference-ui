@@ -251,7 +251,7 @@ function scatterErrorColor(error: number) {
 function MetricDot({ color }: { color: string }) {
   return (
     <span
-      className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border border-black"
+      className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border border-black shadow-[inset_0_1px_0_rgb(255_255_255_/_0.55)]"
       style={{ background: color }}
     />
   );
@@ -274,7 +274,7 @@ function ScatterPoint(props: any) {
     <circle
       cx={cx}
       cy={cy}
-      r={4}
+      r={4.5}
       fill={scatterErrorColor(error)}
       stroke="var(--ds-background-100)"
       strokeWidth={0.75}
@@ -299,10 +299,10 @@ function MetricCard({ eyebrow, value, sub, tone = "var(--ds-gray-1000)" }: {
     <div className="depth-surface rounded-[8px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] p-4">
       <div className="flex items-center gap-2">
         <MetricDot color={tone} />
-        <p className="font-mono text-[11px] uppercase tracking-wide text-[var(--ds-gray-700)]">{eyebrow}</p>
+        <p className="font-mono text-[11px] uppercase tracking-normal text-[var(--ds-gray-700)]">{eyebrow}</p>
       </div>
-      <p className="mt-2 text-[26px] font-semibold tabular-nums leading-none text-[var(--ds-gray-1000)]">{value}</p>
-      {sub && <p className="mt-1.5 font-mono text-[11px] text-[var(--ds-gray-600)]">{sub}</p>}
+      <p className="mt-2 text-[28px] font-semibold tabular-nums leading-8 text-[var(--ds-gray-1000)]">{value}</p>
+      {sub && <p className="mt-1 text-[12px] leading-5 text-[var(--ds-gray-700)]">{sub}</p>}
     </div>
   );
 }
@@ -355,17 +355,17 @@ function SectionCard({ eyebrow, title, sub, children, action }: {
   children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[8px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)]">
-      <div className="flex items-start justify-between border-b border-[var(--ds-gray-alpha-300)] px-4 py-3">
-        <div>
-          <p className="font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">{eyebrow}</p>
-          <h2 className="mt-0.5 text-[15px] font-semibold">{title}</h2>
-          {sub && <p className="mt-0.5 font-mono text-[11px] text-[var(--ds-amber-700)]">{sub}</p>}
+    <section className="overflow-hidden rounded-[8px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)]">
+      <div className="flex flex-col gap-3 border-b border-[var(--ds-gray-alpha-400)] p-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="mb-1 font-mono text-[11px] uppercase tracking-normal text-[var(--ds-gray-700)]">{eyebrow}</p>
+          <h2 className="text-[18px] font-semibold leading-6 text-[var(--ds-gray-1000)]">{title}</h2>
+          {sub && <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--ds-gray-900)]">{sub}</p>}
         </div>
-        {action}
+        {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
       </div>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -696,8 +696,14 @@ export default function DataAnalysisPage() {
         </SectionCard>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-[8px] border border-[var(--ds-red-400)] bg-[var(--ds-red-100)] px-4 py-3 text-[13px] text-[var(--ds-red-700)]">
-            <AlertCircle className="h-4 w-4 shrink-0" />Cannot reach API: {error}
+          <div className="rounded-[8px] border border-[var(--ds-red-400)] bg-[var(--ds-red-100)] p-3 text-[var(--ds-red-900)]">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="text-[13px] font-semibold">Cannot reach API</p>
+                <p className="mt-1 font-mono text-[11px] leading-5 opacity-80">{error}</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -721,12 +727,12 @@ export default function DataAnalysisPage() {
                   return (
                     <button key={m} onClick={() => setFusionModels(prev => checked ? prev.filter(x => x !== m) : [...prev, m])}
                       className={cn(
-                        "inline-flex h-8 items-center gap-2 rounded-[7px] border px-3 text-[12px] font-medium transition",
+                        "inline-flex h-8 items-center gap-2 rounded-[7px] border px-2.5 text-[12px] font-medium leading-none outline-none transition focus-visible:shadow-[var(--ds-focus-ring)]",
                         checked
-                          ? "border-[var(--ds-gray-1000)] bg-[var(--ds-background-200)] text-[var(--ds-gray-1000)]"
-                          : "border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] text-[var(--ds-gray-900)] hover:bg-[var(--ds-gray-100)]",
+                          ? "border-[var(--ds-gray-1000)] bg-[var(--ds-gray-1000)] text-[var(--ds-background-100)]"
+                          : "border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] text-[var(--ds-gray-1000)] hover:border-[var(--ds-gray-alpha-500)] hover:bg-[var(--ds-gray-100)]",
                       )}>
-                      <span className={cn("h-3.5 w-3.5 rounded-full border transition", checked ? "border-black bg-[var(--ds-gray-1000)]" : "border-black bg-transparent")} />
+                      <span className={cn("h-2.5 w-2.5 rounded-full border border-black transition", checked ? "bg-[var(--ds-background-100)]" : "bg-transparent")} />
                       {m}
                     </button>
                   );
@@ -742,7 +748,7 @@ export default function DataAnalysisPage() {
                   const raw = fusionWeights[m] ?? 50;
                   const pct = (normWeights[m] * 100).toFixed(1);
                   return (
-                    <div key={m} className="grid items-center gap-3" style={{ gridTemplateColumns: "1fr 120px 64px" }}>
+                    <div key={m} className="grid items-center gap-3 rounded-[7px] border border-[var(--ds-gray-alpha-300)] bg-[var(--ds-background-200)] p-3 md:grid-cols-[1fr_120px_64px]">
                       <div>
                         <p className="mb-1 font-mono text-[11px] text-[var(--ds-gray-800)] truncate">{m}</p>
                         <input type="range" min={0} max={100} step={1} value={raw}
@@ -766,13 +772,13 @@ export default function DataAnalysisPage() {
                 {/* Auto-optimize row */}
                 <div className="flex items-center gap-2 pt-1">
                   <select value={fusionOptTarget} onChange={e => setFusionOptTarget(e.target.value as "mae" | "rmse")}
-                    className="h-8 rounded-[6px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-2 font-mono text-[12px] outline-none focus:border-[var(--ds-blue-700)]">
+                    className="h-8 rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 font-mono text-[12px] outline-none transition focus-visible:shadow-[var(--ds-focus-ring)]">
                     <option value="mae">Minimize MAE</option>
                     <option value="rmse">Minimize RMSE</option>
                   </select>
                   <button onClick={handleOptimize}
                     disabled={isOptimizing || labeled.length === 0}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-[7px] border border-[var(--ds-gray-1000)] bg-[var(--ds-gray-1000)] px-3 text-[12px] font-medium text-[var(--ds-background-100)] transition hover:bg-black disabled:opacity-50">
+                    className="inline-flex h-8 items-center justify-center gap-2 rounded-[7px] border border-[var(--ds-gray-1000)] bg-[var(--ds-gray-1000)] px-2.5 text-[12px] font-medium leading-none text-[var(--ds-background-100)] outline-none transition hover:border-black hover:bg-black focus-visible:shadow-[var(--ds-focus-ring)] disabled:pointer-events-none disabled:opacity-50">
                     {isOptimizing
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Optimizing…</>
                       : <><Shuffle className="h-3.5 w-3.5" />Auto-optimize weights</>}
@@ -787,7 +793,7 @@ export default function DataAnalysisPage() {
                 {/* Normalized weight summary bar */}
                 <div>
                   <p className="mb-1.5 font-mono text-[10px] uppercase text-[var(--ds-gray-600)]">Normalized weights</p>
-                  <div className="flex h-5 w-full overflow-hidden rounded-full border border-[var(--ds-gray-alpha-400)]">
+                  <div className="flex h-5 w-full overflow-hidden rounded-full border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)]">
                     {fusionModels.map((m, i) => {
                       const COLORS = ["var(--ds-gray-1000)", "var(--ds-gray-800)", "var(--ds-gray-600)", "var(--ds-gray-500)", "var(--ds-gray-400)"];
                       return (
@@ -853,12 +859,17 @@ export default function DataAnalysisPage() {
               <div className="p-4">
                 <ResponsiveContainer width="100%" height={300}>
                   <ScatterChart margin={{ top: 8, right: 20, bottom: 28, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--ds-gray-200)" />
+                    <CartesianGrid stroke="var(--ds-gray-alpha-300)" vertical={false} />
                     <XAxis dataKey="x" type="number" name="Actual" domain={[CL_MIN, CL_MAX]}
+                      axisLine={false}
                       tick={{ fontSize: 11, fontFamily: "monospace" }}
+                      tickLine={false}
+                      tickMargin={10}
                       label={{ value: "Actual CL", position: "insideBottom", offset: -18, fontSize: 11 }} />
                     <YAxis dataKey="y" type="number" name="Predicted" domain={[CL_MIN, CL_MAX]}
+                      axisLine={false}
                       tick={{ fontSize: 11, fontFamily: "monospace" }}
+                      tickLine={false}
                       label={{ value: "Predicted CL", angle: -90, position: "insideLeft", offset: 14, fontSize: 11 }} />
                     <Tooltip cursor={{ strokeDasharray: "3 3" }}
                       content={({ active, payload }) => {
@@ -900,16 +911,19 @@ export default function DataAnalysisPage() {
               <div className="p-4">
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={residualBins} margin={{ top: 8, right: 20, bottom: 28, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--ds-gray-200)" vertical={false} />
+                    <CartesianGrid stroke="var(--ds-gray-alpha-300)" vertical={false} />
                     <XAxis dataKey="bin" tick={{ fontSize: 10, fontFamily: "monospace" }}
+                      axisLine={false}
                       label={{ value: "Error (CL)", position: "insideBottom", offset: -18, fontSize: 11 }}
-                      interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 11, fontFamily: "monospace" }} />
+                      interval="preserveStartEnd"
+                      tickLine={false}
+                      tickMargin={10} />
+                    <YAxis axisLine={false} tick={{ fontSize: 11, fontFamily: "monospace" }} tickLine={false} />
                     <Tooltip content={({ active, payload }) => !active || !payload?.[0] ? null :
                       <ChartTip><p>Bin: <strong>{payload[0].payload.bin}</strong></p><p>Count: <strong>{payload[0].value}</strong></p></ChartTip>} />
                     <Bar dataKey="count"
                       fill="var(--ds-gray-1000)"
-                      fillOpacity={0.75} radius={[2, 2, 0, 0]} />
+                      fillOpacity={0.78} radius={[6, 6, 0, 0]} stroke="var(--ds-gray-1000)" strokeWidth={1} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -920,11 +934,14 @@ export default function DataAnalysisPage() {
               <div className="p-4">
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={distBins} margin={{ top: 8, right: 20, bottom: 28, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--ds-gray-200)" vertical={false} />
+                    <CartesianGrid stroke="var(--ds-gray-alpha-300)" vertical={false} />
                     <XAxis dataKey="bin" tick={{ fontSize: 10, fontFamily: "monospace" }}
+                      axisLine={false}
                       label={{ value: "Centiloid", position: "insideBottom", offset: -18, fontSize: 11 }}
-                      interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 11, fontFamily: "monospace" }} />
+                      interval="preserveStartEnd"
+                      tickLine={false}
+                      tickMargin={10} />
+                    <YAxis axisLine={false} tick={{ fontSize: 11, fontFamily: "monospace" }} tickLine={false} />
                     <Legend wrapperStyle={{ fontSize: 11, fontFamily: "monospace", paddingTop: 8 }}
                       formatter={v => v === "actual" ? "Ground truth" : "Predicted"} />
                     <Tooltip content={({ active, payload }) => !active || !payload?.length ? null :
@@ -932,10 +949,10 @@ export default function DataAnalysisPage() {
                         <p>Bin: <strong>{payload[0]?.payload?.bin}</strong></p>
                         {payload.map(p => <p key={p.name} style={{ color: p.color as string }}>{p.name === "actual" ? "Ground truth" : "Predicted"}: <strong>{p.value}</strong></p>)}
                       </ChartTip>} />
-                    <Bar dataKey="actual" fill="var(--ds-green-700)" fillOpacity={0.7} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="actual" fill="var(--ds-green-700)" fillOpacity={0.72} radius={[6, 6, 0, 0]} stroke="var(--ds-gray-1000)" strokeWidth={1} />
                     <Bar dataKey="pred"
                       fill="var(--ds-gray-1000)"
-                      fillOpacity={0.7} radius={[2, 2, 0, 0]} />
+                      fillOpacity={0.72} radius={[6, 6, 0, 0]} stroke="var(--ds-gray-1000)" strokeWidth={1} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -945,9 +962,9 @@ export default function DataAnalysisPage() {
 
         {/* Empty states */}
         {!loading && labeled.length === 0 && totalFiltered > 0 && (
-          <div className="rounded-[8px] border border-[var(--ds-amber-400)] bg-[var(--ds-amber-100)] px-4 py-6 text-center">
-            <p className="text-[13px] font-semibold text-[var(--ds-amber-900)]">No labeled results found for this selection</p>
-            <p className="mt-1 font-mono text-[11px] text-[var(--ds-amber-700)]">
+          <div className="rounded-[8px] border border-[var(--ds-amber-400)] bg-[var(--ds-amber-100)] px-4 py-6 text-center text-[var(--ds-amber-900)]">
+            <p className="text-[13px] font-semibold">No labeled results found for this selection</p>
+            <p className="mt-1 text-[12px] leading-5 opacity-80">
               Run inference with ground-truth labels to see metrics and charts.
             </p>
           </div>
