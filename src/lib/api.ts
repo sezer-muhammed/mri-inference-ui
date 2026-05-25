@@ -5,7 +5,16 @@ export type InferenceResult = {
   centiloid: number;
   raw_output: number;
   label: string | null;
+  fold: number | null;
   created_at: string;
+};
+
+export type ResultsPage = {
+  count: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  results: InferenceResult[];
 };
 
 export async function getModels(apiBase: string): Promise<string[]> {
@@ -36,8 +45,54 @@ export async function runInference(
 }
 
 export async function getResults(apiBase: string): Promise<InferenceResult[]> {
-  const res = await fetch(`${apiBase}/results`);
+  const all: InferenceResult[] = [];
+  const limit = 1000;
+  let offset = 0;
+
+  for (;;) {
+    const page = await getResultsPage(apiBase, { limit, offset });
+    all.push(...page.results);
+    if (!page.has_more) return all;
+    offset += page.results.length;
+    if (page.results.length === 0) return all;
+  }
+}
+
+export async function getResultsPage(
+  apiBase: string,
+  options: { fold?: number | null; limit?: number; offset?: number } = {},
+): Promise<ResultsPage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 250));
+  params.set("offset", String(options.offset ?? 0));
+  if (options.fold !== undefined && options.fold !== null) {
+    params.set("fold", String(options.fold));
+  }
+
+  const res = await fetch(`${apiBase}/results?${params.toString()}`);
   if (!res.ok) throw new Error(`GET /results failed (${res.status})`);
-  const data: { count: number; results: InferenceResult[] } = await res.json();
-  return data.results;
+  return res.json();
+}
+
+export async function getFolds(apiBase: string): Promise<number[]> {
+  const res = await fetch(`${apiBase}/results/folds`);
+  if (!res.ok) throw new Error(`GET /results/folds failed (${res.status})`);
+  const data: { folds: number[] } = await res.json();
+  return data.folds;
+}
+
+export async function patchResultFolds(
+  apiBase: string,
+  updates: Array<
+    | { id: number; fold: number | null }
+    | { filename: string; model_name: string; fold: number | null }
+  >,
+): Promise<{ updated: number; missing: unknown[] }> {
+  const res = await fetch(`${apiBase}/results/fold`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates }),
+  });
+  if (!res.ok) throw new Error(`PATCH /results/fold failed (${res.status})`);
+  return res.json();
 }

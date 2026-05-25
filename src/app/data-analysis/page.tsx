@@ -27,7 +27,7 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/cn";
-import { type InferenceResult, getModels, getResults } from "@/lib/api";
+import { type InferenceResult, getFolds, getModels, getResults } from "@/lib/api";
 import { DataTable, type TableColumn } from "@/components/ui/data-table";
 
 /* ─── clip ───────────────────────────────────────────────────────────────────
@@ -380,9 +380,11 @@ export default function DataAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [availableFolds, setAvailableFolds] = useState<number[]>([]);
 
   // ── analysis controls
   const [selectedModel, setSelectedModel] = useState("__all__");
+  const [selectedFold, setSelectedFold] = useState<number | "__all__">("__all__");
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const [binCount, setBinCount] = useState(DEFAULT_BINS);
 
@@ -419,6 +421,10 @@ export default function DataAnalysisPage() {
       setResults(res);
       const fromResults = [...new Set(res.map(r => r.model_name))];
       setModels([...new Set([...mods, ...fromResults])].sort());
+      const folds = await getFolds(apiBase).catch(() => (
+        [...new Set(res.map(r => r.fold).filter((f): f is number => f !== null))]
+      ));
+      setAvailableFolds(folds.sort((a, b) => a - b));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -428,6 +434,11 @@ export default function DataAnalysisPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const foldResults = useMemo(
+    () => selectedFold === "__all__" ? results : results.filter(r => r.fold === selectedFold),
+    [results, selectedFold],
+  );
+
   /* ── normalized weights ────────────────────────────────────────────────── */
   const normWeights = useMemo<Record<string, number>>(() => {
     const total = fusionModels.reduce((s, m) => s + (fusionWeights[m] ?? 50), 0) || 1;
@@ -436,8 +447,8 @@ export default function DataAnalysisPage() {
 
   /* ── fused dataset ─────────────────────────────────────────────────────── */
   const fusedData = useMemo(
-    () => computeFused(results, fusionModels, normWeights),
-    [results, fusionModels, normWeights],
+    () => computeFused(foldResults, fusionModels, normWeights),
+    [foldResults, fusionModels, normWeights],
   );
 
   /* ── labeled pairs for analysis ────────────────────────────────────────── */
@@ -448,15 +459,15 @@ export default function DataAnalysisPage() {
         .map(f => ({ pred: f.pred, actual: f.actual!, filename: f.filename, model: "Fused" }));
     }
     const src = selectedModel === "__all__"
-      ? results
-      : results.filter(r => r.model_name === selectedModel);
+      ? foldResults
+      : foldResults.filter(r => r.model_name === selectedModel);
     const pairs: LabeledPair[] = [];
     for (const r of src) {
       const actual = parsedLabel(r);
       if (actual !== null) pairs.push({ pred: clip(r.centiloid), actual, filename: r.filename, model: r.model_name });
     }
     return pairs;
-  }, [results, selectedModel, fusedData]);
+  }, [foldResults, selectedModel, fusedData]);
 
   const metrics = useMemo(() => computeMetrics(labeled, threshold), [labeled, threshold]);
 
@@ -480,11 +491,11 @@ export default function DataAnalysisPage() {
   /* ── table ─────────────────────────────────────────────────────────────── */
   type IndividualRow = Omit<InferenceResult, "id"> & { id: string };
   const individualRows = useMemo<IndividualRow[]>(() => {
-    const src = selectedModel === "__all__" ? results
+    const src = selectedModel === "__all__" ? foldResults
       : selectedModel === "__fused__" ? []
-      : results.filter(r => r.model_name === selectedModel);
+      : foldResults.filter(r => r.model_name === selectedModel);
     return src.map(r => ({ ...r, id: String(r.id) }));
-  }, [results, selectedModel]);
+  }, [foldResults, selectedModel]);
 
   type FusedRow = { id: string; filename: string; pred: number; actual: number | null } & Record<string, number | string | null>;
   const fusedRows = useMemo<FusedRow[]>(() => {
@@ -505,6 +516,10 @@ export default function DataAnalysisPage() {
     {
       key: "label", header: "Actual (clipped)", align: "right",
       render: r => { const v = parsedLabel(r); return v !== null ? <span className="font-mono text-[12px] tabular-nums">{v.toFixed(1)}</span> : <span className="text-[var(--ds-gray-500)]">—</span>; },
+    },
+    {
+      key: "fold", header: "Fold", align: "right",
+      render: r => r.fold !== null ? <span className="font-mono text-[12px] tabular-nums">{r.fold}</span> : <span className="text-[var(--ds-gray-500)]">—</span>,
     },
     {
       key: "delta", header: "Δ Error", align: "right",
@@ -545,7 +560,7 @@ export default function DataAnalysisPage() {
     setIsOptimizing(true);
     setTimeout(() => {
       try {
-        const optW = optimizeWeights(results, fusionModels, fusionOptTarget);
+        const optW = optimizeWeights(foldResults, fusionModels, fusionOptTarget);
         const next: Record<string, number> = {};
         fusionModels.forEach((m, i) => { next[m] = Math.round(optW[i] * 10000) / 100; });
         setFusionWeights(next);
@@ -553,12 +568,12 @@ export default function DataAnalysisPage() {
         setIsOptimizing(false);
       }
     }, 16);
-  }, [results, fusionModels, fusionOptTarget, isOptimizing]);
+  }, [foldResults, fusionModels, fusionOptTarget, isOptimizing]);
 
   /* ── summary count chips ───────────────────────────────────────────────── */
   const totalFiltered = selectedModel === "__fused__" ? fusedData.length
-    : selectedModel === "__all__" ? results.length
-    : results.filter(r => r.model_name === selectedModel).length;
+    : selectedModel === "__all__" ? foldResults.length
+    : foldResults.filter(r => r.model_name === selectedModel).length;
 
   /* ═══════════════════════════════════════════════════════════════════════ */
   /* render                                                                   */
@@ -629,9 +644,9 @@ export default function DataAnalysisPage() {
               <div className="flex flex-wrap gap-2">
                 {["__all__", ...models, ...(fusionActive ? ["__fused__"] : [])].map(m => {
                   const label = m === "__all__" ? "All models" : m === "__fused__" ? "Fused" : m;
-                  const count = m === "__all__" ? results.length
+                  const count = m === "__all__" ? foldResults.length
                     : m === "__fused__" ? fusedData.length
-                    : results.filter(r => r.model_name === m).length;
+                    : foldResults.filter(r => r.model_name === m).length;
                   return (
                     <button key={m} onClick={() => setSelectedModel(m)}
                       className={cn(
@@ -650,6 +665,38 @@ export default function DataAnalysisPage() {
                 })}
               </div>
             </div>
+
+            {availableFolds.length > 0 && (
+              <div>
+                <p className="mb-2 font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">Fold</p>
+                <div className="flex flex-wrap gap-2">
+                  {(["__all__", ...availableFolds] as const).map(f => {
+                    const selected = selectedFold === f;
+                    const count = f === "__all__"
+                      ? results.length
+                      : results.filter(r => r.fold === f).length;
+                    return (
+                      <button
+                        key={String(f)}
+                        onClick={() => setSelectedFold(f)}
+                        className={cn(
+                          "inline-flex h-8 items-center gap-1.5 rounded-[7px] border px-3 text-[12px] font-medium transition",
+                          selected
+                            ? "border-[var(--ds-gray-1000)] bg-[var(--ds-gray-1000)] text-[var(--ds-background-100)]"
+                            : "border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] text-[var(--ds-gray-900)] hover:bg-[var(--ds-gray-100)]",
+                        )}
+                      >
+                        {f === "__all__" ? "All folds" : `Fold ${f}`}
+                        <span className={cn("inline-flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 font-mono text-[10px]",
+                          selected ? "bg-white/20 text-white" : "bg-[var(--ds-gray-200)] text-[var(--ds-gray-800)]")}>
+                          {count.toLocaleString()}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Sliders */}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -684,6 +731,7 @@ export default function DataAnalysisPage() {
                 { label: "Labeled", value: labeled.length.toLocaleString() },
                 { label: "Coverage", value: totalFiltered > 0 ? `${((labeled.length / totalFiltered) * 100).toFixed(1)}%` : "—" },
                 { label: "Models", value: models.length.toString() },
+                { label: "Fold", value: selectedFold === "__all__" ? "All" : String(selectedFold) },
                 { label: "Clip range", value: "[−20, 130] CL" },
               ].map(s => (
                 <div key={s.label} className="rounded-[6px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-3 py-1.5">

@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
-import { type InferenceResult, getModels, getResults, runInference } from "@/lib/api";
+import { type InferenceResult, getModels, getResultsPage, runInference } from "@/lib/api";
 import { DataTable, type TableColumn } from "@/components/ui/data-table";
 
 const NiiViewer = dynamic(
@@ -173,6 +173,9 @@ export default function Page() {
   const [runState, setRunState] = useState<RunState>({ status: "idle" });
 
   const [results, setResults] = useState<InferenceResult[]>([]);
+  const [resultsTotal, setResultsTotal] = useState(0);
+  const [resultsOffset, setResultsOffset] = useState(0);
+  const resultsLimit = 100;
   const [resultsLoading, setResultsLoading] = useState(false);
   const [resultsError, setResultsError] = useState<string | null>(null);
 
@@ -201,11 +204,14 @@ export default function Page() {
     setModelsLoading(false);
   }, [apiBase, modelName]);
 
-  const loadResults = useCallback(async () => {
+  const loadResults = useCallback(async (offset: number) => {
     setResultsLoading(true);
     setResultsError(null);
     try {
-      setResults(await getResults(apiBase));
+      const page = await getResultsPage(apiBase, { limit: resultsLimit, offset });
+      setResults(page.results);
+      setResultsTotal(page.count);
+      setResultsOffset(page.offset);
     } catch (err: any) {
       setResultsError(err.message);
     } finally {
@@ -215,7 +221,7 @@ export default function Page() {
 
   useEffect(() => {
     loadModels();
-    loadResults();
+    loadResults(0);
   }, [loadModels, loadResults]);
 
   /* File handling */
@@ -242,7 +248,7 @@ export default function Page() {
     try {
       const result = await runInference(apiBase, file, modelName.trim(), label.trim() || undefined);
       setRunState({ status: "done", result });
-      await loadResults();
+      await loadResults(0);
     } catch (err: any) {
       setRunState({ status: "error", message: err.message });
     }
@@ -532,13 +538,13 @@ export default function Page() {
               <h2 className="mt-0.5 text-[15px] font-semibold">Inference results</h2>
             </div>
             <div className="flex items-center gap-2">
-              {results.length > 0 && (
+              {resultsTotal > 0 && (
                 <span className="inline-flex h-6 items-center rounded-[5px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-200)] px-2 font-mono text-[11px] text-[var(--ds-gray-800)]">
-                  {results.length} records
+                  {resultsOffset + 1}-{Math.min(resultsOffset + results.length, resultsTotal)} / {resultsTotal}
                 </span>
               )}
               <button
-                onClick={loadResults}
+                onClick={() => loadResults(resultsOffset)}
                 disabled={resultsLoading}
                 className="inline-flex h-8 items-center gap-1.5 rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
               >
@@ -626,6 +632,17 @@ export default function Page() {
                   ),
               },
               {
+                key: "fold",
+                header: "Fold",
+                align: "right",
+                render: (r) =>
+                  r.fold !== null ? (
+                    <span className="font-mono text-[12px] tabular-nums">{r.fold}</span>
+                  ) : (
+                    <span className="text-[var(--ds-gray-500)]">â€”</span>
+                  ),
+              },
+              {
                 key: "created_at",
                 header: "Date",
                 render: (r) => (
@@ -637,6 +654,24 @@ export default function Page() {
             ];
             return <DataTable rows={rows} columns={columns} />;
           })()}
+          {resultsTotal > resultsLimit && (
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--ds-gray-alpha-300)] p-3">
+              <button
+                onClick={() => loadResults(Math.max(0, resultsOffset - resultsLimit))}
+                disabled={resultsLoading || resultsOffset === 0}
+                className="inline-flex h-8 items-center rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => loadResults(resultsOffset + resultsLimit)}
+                disabled={resultsLoading || resultsOffset + results.length >= resultsTotal}
+                className="inline-flex h-8 items-center rounded-[7px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2.5 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </div>
