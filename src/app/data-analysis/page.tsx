@@ -94,6 +94,52 @@ function buildDualHistogram(actuals: number[], preds: number[], bins: number) {
   return result;
 }
 
+function representativeScatterSample<T extends { x: number; y: number; name: string }>(
+  data: T[],
+  maxPoints: number,
+) {
+  if (data.length <= maxPoints) return { data, sampled: false };
+
+  const actualBins = 10;
+  const errorBins = 6;
+  const buckets = new Map<string, T[]>();
+
+  for (const point of data) {
+    const actualRatio = (point.x - CL_MIN) / (CL_MAX - CL_MIN);
+    const actualBucket = Math.max(0, Math.min(actualBins - 1, Math.floor(actualRatio * actualBins)));
+    const error = Math.abs(point.y - point.x);
+    const errorBucket = Math.max(0, Math.min(errorBins - 1, Math.floor((error / (CL_MAX - CL_MIN)) * errorBins)));
+    const key = `${actualBucket}:${errorBucket}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(point);
+    else buckets.set(key, [point]);
+  }
+
+  const selected: T[] = [];
+  const orderedBuckets = [...buckets.values()].sort((a, b) => b.length - a.length);
+  const quota = Math.max(1, Math.floor(maxPoints / Math.max(1, orderedBuckets.length)));
+
+  for (const bucket of orderedBuckets) {
+    const sorted = [...bucket].sort((a, b) => a.name.localeCompare(b.name));
+    const take = Math.min(quota, sorted.length, maxPoints - selected.length);
+    if (take <= 0) break;
+    for (let i = 0; i < take; i++) {
+      const index = Math.floor(((i + 0.5) * sorted.length) / take);
+      selected.push(sorted[Math.min(index, sorted.length - 1)]);
+    }
+  }
+
+  if (selected.length < maxPoints) {
+    const seen = new Set(selected.map(point => point.name));
+    const remainder = data
+      .filter(point => !seen.has(point.name))
+      .sort((a, b) => Math.abs(b.y - b.x) - Math.abs(a.y - a.x) || a.name.localeCompare(b.name));
+    selected.push(...remainder.slice(0, maxPoints - selected.length));
+  }
+
+  return { data: selected, sampled: true };
+}
+
 function classIndex(value: number, thresholds: number[]) {
   for (let i = 0; i < thresholds.length; i++) {
     if (value <= thresholds[i]) return i;
@@ -579,8 +625,7 @@ export default function DataAnalysisPage() {
   /* ── scatter ───────────────────────────────────────────────────────────── */
   const scatterData = useMemo(() => {
     const data = labeled.map(p => ({ x: p.actual, y: p.pred, name: p.filename }));
-    if (data.length <= MAX_SCATTER) return { data, sampled: false };
-    return { data: [...data].sort(() => Math.random() - 0.5).slice(0, MAX_SCATTER), sampled: true };
+    return representativeScatterSample(data, MAX_SCATTER);
   }, [labeled]);
 
   const refLineData = [{ x: CL_MIN, y: CL_MIN }, { x: CL_MAX, y: CL_MAX }];
@@ -1005,7 +1050,7 @@ export default function DataAnalysisPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             {/* 05 Scatter */}
             <SectionCard eyebrow="05 / Scatter" title="Predicted vs Actual"
-              sub={scatterData.sampled ? `Showing ${MAX_SCATTER.toLocaleString()} random samples of ${labeled.length.toLocaleString()}` : undefined}>
+              sub={scatterData.sampled ? `Showing ${MAX_SCATTER.toLocaleString()} representative samples of ${labeled.length.toLocaleString()}` : undefined}>
               <div className="p-4">
                 <ResponsiveContainer width="100%" height={300}>
                   <ScatterChart margin={{ top: 8, right: 20, bottom: 28, left: 8 }}>
