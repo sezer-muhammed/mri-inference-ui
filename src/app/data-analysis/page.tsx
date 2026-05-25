@@ -115,24 +115,55 @@ function representativeScatterSample<T extends { x: number; y: number; name: str
     else buckets.set(key, [point]);
   }
 
-  const selected: T[] = [];
-  const orderedBuckets = [...buckets.values()].sort((a, b) => b.length - a.length);
-  const quota = Math.max(1, Math.floor(maxPoints / Math.max(1, orderedBuckets.length)));
+  const outlierBudget = Math.round(maxPoints * 0.08);
+  const densityBudget = maxPoints - outlierBudget;
 
-  for (const bucket of orderedBuckets) {
+  const bucketStats = [...buckets.values()].map(bucket => {
+    const expected = (bucket.length / data.length) * densityBudget;
+    const avgError = bucket.reduce((sum, point) => sum + Math.abs(point.y - point.x), 0) / bucket.length;
+    return { bucket, expected, quota: Math.floor(expected), remainder: expected % 1, avgError };
+  });
+
+  let assigned = bucketStats.reduce((sum, stat) => sum + stat.quota, 0);
+  for (const stat of [...bucketStats].sort((a, b) => b.remainder - a.remainder)) {
+    if (assigned >= densityBudget) break;
+    stat.quota += 1;
+    assigned += 1;
+  }
+
+  const selected: T[] = [];
+  const selectedKeys = new Set<string>();
+  const pointKey = (point: T) => `${point.name}:${point.x.toFixed(4)}:${point.y.toFixed(4)}`;
+
+  const addEvenlyFromBucket = (bucket: T[], take: number) => {
     const sorted = [...bucket].sort((a, b) => a.name.localeCompare(b.name));
-    const take = Math.min(quota, sorted.length, maxPoints - selected.length);
-    if (take <= 0) break;
-    for (let i = 0; i < take; i++) {
-      const index = Math.floor(((i + 0.5) * sorted.length) / take);
-      selected.push(sorted[Math.min(index, sorted.length - 1)]);
+    const target = Math.min(take, sorted.length, maxPoints - selected.length);
+    for (let i = 0; i < target; i++) {
+      const index = Math.floor(((i + 0.5) * sorted.length) / target);
+      const point = sorted[Math.min(index, sorted.length - 1)];
+      const key = pointKey(point);
+      if (!selectedKeys.has(key)) {
+        selectedKeys.add(key);
+        selected.push(point);
+      }
     }
+  };
+
+  for (const { bucket, quota } of bucketStats) {
+    if (quota > 0) addEvenlyFromBucket(bucket, quota);
+  }
+
+  let protectedBuckets = 0;
+  for (const { bucket } of [...bucketStats].sort((a, b) => b.avgError - a.avgError)) {
+    if (selected.length >= maxPoints || protectedBuckets >= outlierBudget) break;
+    if (bucket.some(point => selectedKeys.has(pointKey(point)))) continue;
+    addEvenlyFromBucket(bucket, 1);
+    protectedBuckets += 1;
   }
 
   if (selected.length < maxPoints) {
-    const seen = new Set(selected.map(point => point.name));
     const remainder = data
-      .filter(point => !seen.has(point.name))
+      .filter(point => !selectedKeys.has(pointKey(point)))
       .sort((a, b) => Math.abs(b.y - b.x) - Math.abs(a.y - a.x) || a.name.localeCompare(b.name));
     selected.push(...remainder.slice(0, maxPoints - selected.length));
   }
@@ -1050,7 +1081,7 @@ export default function DataAnalysisPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             {/* 05 Scatter */}
             <SectionCard eyebrow="05 / Scatter" title="Predicted vs Actual"
-              sub={scatterData.sampled ? `Showing ${MAX_SCATTER.toLocaleString()} representative samples of ${labeled.length.toLocaleString()}` : undefined}>
+              sub={scatterData.sampled ? `Showing ${MAX_SCATTER.toLocaleString()} density-aware samples of ${labeled.length.toLocaleString()}` : undefined}>
               <div className="p-4">
                 <ResponsiveContainer width="100%" height={300}>
                   <ScatterChart margin={{ top: 8, right: 20, bottom: 28, left: 8 }}>
