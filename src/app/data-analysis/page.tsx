@@ -38,9 +38,9 @@ const CL_MIN = -20;
 const CL_MAX = 130;
 const clip = (v: number) => Math.max(CL_MIN, Math.min(CL_MAX, v));
 
-const DEFAULT_THRESHOLD = 18;
+const DEFAULT_THRESHOLDS = [18];
 const DEFAULT_BINS = 24;
-const MAX_SCATTER = 3000;
+const MAX_SCATTER = 300;
 
 /* ─── types ──────────────────────────────────────────────────────────────── */
 interface LabeledPair {
@@ -94,7 +94,14 @@ function buildDualHistogram(actuals: number[], preds: number[], bins: number) {
   return result;
 }
 
-function computeMetrics(pairs: LabeledPair[], threshold: number) {
+function classIndex(value: number, thresholds: number[]) {
+  for (let i = 0; i < thresholds.length; i++) {
+    if (value <= thresholds[i]) return i;
+  }
+  return thresholds.length;
+}
+
+function computeMetrics(pairs: LabeledPair[], thresholds: number[]) {
   const n = pairs.length;
   if (!n) return null;
 
@@ -117,17 +124,26 @@ function computeMetrics(pairs: LabeledPair[], threshold: number) {
   const r2 = ssTot > 0 ? 1 - sumSE / ssTot : 0;
   const pearson = vA > 0 && vP > 0 ? cov / Math.sqrt(vA * vP) : 0;
 
-  let tp = 0, fp = 0, tn = 0, fn = 0;
+  const classCount = thresholds.length + 1;
+  const confusion = Array.from({ length: classCount }, () => new Array(classCount).fill(0));
+  let correct = 0;
   for (const { pred, actual } of pairs) {
-    const pp = pred > threshold, ap = actual > threshold;
-    if (pp && ap) tp++; else if (pp) fp++; else if (ap) fn++; else tn++;
+    const actualClass = classIndex(actual, thresholds);
+    const predClass = classIndex(pred, thresholds);
+    confusion[actualClass][predClass]++;
+    if (actualClass === predClass) correct++;
   }
-  const accuracy = (tp + tn) / n;
-  const prec = tp + fp > 0 ? tp / (tp + fp) : 0;
-  const sens = tp + fn > 0 ? tp / (tp + fn) : 0;
-  const spec = tn + fp > 0 ? tn / (tn + fp) : 0;
-  const f1   = prec + sens > 0 ? (2 * prec * sens) / (prec + sens) : 0;
-  return { mae, mse, rmse, r2, pearson, accuracy, prec, sens, spec, f1, tp, fp, tn, fn, n };
+  const accuracy = correct / n;
+  const classF1 = confusion.map((row, i) => {
+    const tp = row[i];
+    const fp = confusion.reduce((sum, r, ri) => sum + (ri === i ? 0 : r[i]), 0);
+    const fn = row.reduce((sum, v, pi) => sum + (pi === i ? 0 : v), 0);
+    const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+    const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+    return precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+  });
+  const macroF1 = classF1.reduce((a, b) => a + b, 0) / classCount;
+  return { mae, mse, rmse, r2, pearson, accuracy, correct, classF1, macroF1, confusion, classCount, n };
 }
 
 /* ─── fusion helpers ─────────────────────────────────────────────────────── */
@@ -307,37 +323,108 @@ function MetricCard({ eyebrow, value, sub, tone = "var(--ds-gray-1000)" }: {
   );
 }
 
-function ConfusionMatrix({ tp, fp, tn, fn, threshold }: {
-  tp: number; fp: number; tn: number; fn: number; threshold: number;
+function classLabel(index: number, thresholds: number[]) {
+  if (thresholds.length === 0) return "All";
+  if (index === 0) return `<=${thresholds[0]}`;
+  if (index === thresholds.length) return `>${thresholds[thresholds.length - 1]}`;
+  return `${thresholds[index - 1] + 1}-${thresholds[index]}`;
+}
+
+function ConfusionMatrix({ confusion, thresholds }: {
+  confusion: number[][]; thresholds: number[];
 }) {
-  const total = tp + fp + tn + fn;
+  const total = confusion.flat().reduce((a, b) => a + b, 0);
   const pct = (x: number) => total > 0 ? `${((x / total) * 100).toFixed(1)}%` : "—";
-  const cells = [
-    { label: "TN", val: tn, pct: pct(tn), ok: true },
-    { label: "FP", val: fp, pct: pct(fp), ok: false },
-    { label: "FN", val: fn, pct: pct(fn), ok: false },
-    { label: "TP", val: tp, pct: pct(tp), ok: true },
-  ];
+  const size = confusion.length;
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[88px_1fr_1fr] gap-2 text-center">
+      <div className="grid gap-2 text-center" style={{ gridTemplateColumns: `88px repeat(${size}, minmax(74px, 1fr))` }}>
         <div />
-        <div className="font-mono text-[10px] uppercase leading-tight text-[var(--ds-gray-600)]">Pred NEG<br /><span className="text-[var(--ds-gray-500)]">(≤{threshold})</span></div>
-        <div className="font-mono text-[10px] uppercase leading-tight text-[var(--ds-gray-600)]">Pred POS<br /><span className="text-[var(--ds-gray-500)]">(&gt;{threshold})</span></div>
+        {confusion.map((_, i) => (
+          <div key={i} className="font-mono text-[10px] uppercase leading-tight text-[var(--ds-gray-600)]">
+            Pred C{i + 1}<br />
+            <span className="text-[var(--ds-gray-500)]">{classLabel(i, thresholds)}</span>
+          </div>
+        ))}
       </div>
-      {(["NEG", "POS"] as const).map((row, ri) => (
-        <div key={row} className="grid grid-cols-[88px_1fr_1fr] items-center gap-2">
-          <div className="pr-2 text-right font-mono text-[10px] uppercase text-[var(--ds-gray-600)]">Actual {row}</div>
-          {[cells[ri * 2], cells[ri * 2 + 1]].map(c => (
-            <div key={c.label} className="rounded-[6px] border p-3 text-center"
-              style={{ background: c.ok ? "var(--ds-green-100)" : "var(--ds-red-100)", borderColor: c.ok ? "var(--ds-green-400)" : "var(--ds-red-400)" }}>
-              <p className="mb-1 font-mono text-[10px] uppercase" style={{ color: c.ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{c.label}</p>
-              <p className="text-[22px] font-semibold tabular-nums leading-none" style={{ color: c.ok ? "var(--ds-green-900)" : "var(--ds-red-900)" }}>{c.val.toLocaleString()}</p>
-              <p className="mt-1 font-mono text-[10px]" style={{ color: c.ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{c.pct}</p>
-            </div>
-          ))}
+      {confusion.map((row, actualIndex) => (
+        <div key={actualIndex} className="grid items-center gap-2" style={{ gridTemplateColumns: `88px repeat(${size}, minmax(74px, 1fr))` }}>
+          <div className="pr-2 text-right font-mono text-[10px] uppercase text-[var(--ds-gray-600)]">Actual C{actualIndex + 1}</div>
+          {row.map((val, predIndex) => {
+            const ok = actualIndex === predIndex;
+            return (
+              <div key={predIndex} className="rounded-[6px] border p-3 text-center"
+                style={{ background: ok ? "var(--ds-green-100)" : "var(--ds-red-100)", borderColor: ok ? "var(--ds-green-400)" : "var(--ds-red-400)" }}>
+                <p className="mb-1 font-mono text-[10px] uppercase" style={{ color: ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{ok ? "OK" : "MISS"}</p>
+                <p className="text-[22px] font-semibold tabular-nums leading-none" style={{ color: ok ? "var(--ds-green-900)" : "var(--ds-red-900)" }}>{val.toLocaleString()}</p>
+                <p className="mt-1 font-mono text-[10px]" style={{ color: ok ? "var(--ds-green-700)" : "var(--ds-red-700)" }}>{pct(val)}</p>
+              </div>
+            );
+          })}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ThresholdControls({
+  thresholds,
+  setThresholds,
+}: {
+  thresholds: number[];
+  setThresholds: (value: number[]) => void;
+}) {
+  const sorted = [...thresholds].sort((a, b) => a - b);
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">Classification cutpoints</p>
+        <button
+          className="inline-flex h-7 items-center rounded-[6px] border border-[var(--ds-gray-alpha-400)] bg-[var(--ds-background-100)] px-2 text-[12px] font-medium text-[var(--ds-gray-900)] transition hover:bg-[var(--ds-gray-100)] disabled:opacity-50"
+          disabled={sorted.length >= 3}
+          onClick={() => setThresholds([...sorted, sorted.at(-1) !== undefined ? Math.min(sorted.at(-1)! + 18, 120) : 18])}
+          type="button"
+        >
+          Add point
+        </button>
+      </div>
+      <div className="space-y-3">
+        {sorted.map((value, index) => (
+          <div key={index}>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-mono text-[11px] text-[var(--ds-gray-700)]">Point {index + 1}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] font-semibold tabular-nums text-[var(--ds-gray-900)]">{value} CL</span>
+                {sorted.length > 1 && (
+                  <button
+                    className="rounded-[5px] px-1.5 py-1 text-[11px] text-[var(--ds-gray-700)] hover:bg-[var(--ds-gray-100)]"
+                    onClick={() => setThresholds(sorted.filter((_, i) => i !== index))}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={60}
+              step={1}
+              value={value}
+              onChange={e => {
+                const next = [...sorted];
+                next[index] = Number(e.target.value);
+                setThresholds([...new Set(next)].sort((a, b) => a - b));
+              }}
+              className="w-full accent-[var(--ds-gray-1000)]"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between font-mono text-[10px] text-[var(--ds-gray-500)]">
+        <span>0</span><span>15</span><span>30</span><span>45</span><span>60</span>
+      </div>
     </div>
   );
 }
@@ -385,7 +472,7 @@ export default function DataAnalysisPage() {
   // ── analysis controls
   const [selectedModel, setSelectedModel] = useState("__all__");
   const [selectedFold, setSelectedFold] = useState<number | "__all__">("__all__");
-  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
+  const [thresholds, setThresholds] = useState<number[]>(DEFAULT_THRESHOLDS);
   const [binCount, setBinCount] = useState(DEFAULT_BINS);
 
   // ── fusion state
@@ -469,7 +556,7 @@ export default function DataAnalysisPage() {
     return pairs;
   }, [foldResults, selectedModel, fusedData]);
 
-  const metrics = useMemo(() => computeMetrics(labeled, threshold), [labeled, threshold]);
+  const metrics = useMemo(() => computeMetrics(labeled, thresholds), [labeled, thresholds]);
 
   /* ── scatter ───────────────────────────────────────────────────────────── */
   const scatterData = useMemo(() => {
@@ -700,17 +787,7 @@ export default function DataAnalysisPage() {
 
             {/* Sliders */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">Classification threshold</p>
-                  <span className="font-mono text-[13px] font-semibold tabular-nums text-[var(--ds-gray-900)]">{threshold} CL</span>
-                </div>
-                <input type="range" min={0} max={60} step={1} value={threshold}
-                  onChange={e => setThreshold(Number(e.target.value))} className="w-full accent-[var(--ds-gray-1000)]" />
-                <div className="mt-1 flex justify-between font-mono text-[10px] text-[var(--ds-gray-500)]">
-                  <span>0</span><span>15</span><span>30</span><span>45</span><span>60</span>
-                </div>
-              </div>
+              <ThresholdControls thresholds={thresholds} setThresholds={setThresholds} />
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <p className="font-mono text-[11px] uppercase text-[var(--ds-gray-700)]">Histogram bins</p>
@@ -882,17 +959,17 @@ export default function DataAnalysisPage() {
             </SectionCard>
 
             {/* ── 04 Classification metrics ─────────────────────────────────── */}
-            <SectionCard eyebrow="04 / Classification metrics" title={`Binary at threshold ${threshold} CL`}>
+            <SectionCard eyebrow="04 / Classification metrics" title={`${metrics.classCount}-class classification`}>
               <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
                 <MetricCard eyebrow="Accuracy" value={`${(metrics.accuracy * 100).toFixed(1)}%`}
-                  sub={`${(metrics.tp + metrics.tn).toLocaleString()} / ${metrics.n.toLocaleString()} correct`}
+                  sub={`${metrics.correct.toLocaleString()} / ${metrics.n.toLocaleString()} correct`}
                   tone={metricTone(metrics.accuracy >= 0.85, metrics.accuracy >= 0.70)} />
-                <MetricCard eyebrow="F1 Score" value={metrics.f1.toFixed(4)} sub="Harmonic mean prec + rec"
-                  tone={metricTone(metrics.f1 >= 0.85, metrics.f1 >= 0.70)} />
-                <MetricCard eyebrow="Sensitivity" value={`${(metrics.sens * 100).toFixed(1)}%`} sub="True positive rate (recall)"
-                  tone={metricTone(metrics.sens >= 0.85, metrics.sens >= 0.70)} />
-                <MetricCard eyebrow="Specificity" value={`${(metrics.spec * 100).toFixed(1)}%`} sub="True negative rate"
-                  tone={metricTone(metrics.spec >= 0.85, metrics.spec >= 0.70)} />
+                <MetricCard eyebrow="Macro F1" value={metrics.macroF1.toFixed(4)} sub="Mean class F score"
+                  tone={metricTone(metrics.macroF1 >= 0.85, metrics.macroF1 >= 0.70)} />
+                {metrics.classF1.map((score, i) => (
+                  <MetricCard key={i} eyebrow={`F${i + 1}`} value={score.toFixed(4)} sub={`Class ${i + 1}: ${classLabel(i, thresholds)} CL`}
+                    tone={metricTone(score >= 0.85, score >= 0.70)} />
+                ))}
               </div>
             </SectionCard>
           </>
@@ -947,9 +1024,9 @@ export default function DataAnalysisPage() {
 
             {/* 06 Confusion matrix */}
             {metrics && (
-              <SectionCard eyebrow="06 / Confusion matrix" title={`Binary classification at ${threshold} CL`}>
-                <div className="flex items-center justify-center p-6">
-                  <ConfusionMatrix tp={metrics.tp} fp={metrics.fp} tn={metrics.tn} fn={metrics.fn} threshold={threshold} />
+              <SectionCard eyebrow="06 / Confusion matrix" title={`${metrics.classCount} × ${metrics.classCount} classification`}>
+                <div className="overflow-x-auto p-6">
+                  <ConfusionMatrix confusion={metrics.confusion} thresholds={thresholds} />
                 </div>
               </SectionCard>
             )}
